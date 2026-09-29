@@ -1,0 +1,103 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded');
+    
+html, body, [class*="css"],
+h1, h2, h3, h4, h5, h6,
+p, label, div, button, input, textarea, select {
+    font-family: 'Century Gothic', 'Montserrat', 'Arial', sans-serif !important;
+}
+
+/* span se excluye del bloque general para no romper íconos */
+span:not([data-testid="stIconMaterial"]):not(.material-symbols-rounded):not([data-testid="stMarkdownContainer"]){
+    font-family: 'Century Gothic', 'Montserrat', 'Arial', sans-serif !important;
+}
+
+/* Quitar cadenas de los headers */
+[data-testid="stHeaderActionElements"] {
+    display: none !important;
+}
+
+/* Header principal transparente */
+header[data-testid="stHeader"] {
+    background: transparent !important;
+}
+
+/* Contenedor completo del menú de navegación-------- */
+div[data-testid="stSidebarNav"] {
+    padding-top: 0.5rem;
+}
+/* Cada link de página */
+div[data-testid="stSidebarNav"] a {
+    border-radius: 8px;
+    padding: 8px 16px;
+    margin: 2px 8px;
+    font-weight: 500;
+    color: #4a4a4a;
+    transition: background-color 0.15s ease;
+}
+/* Hover */
+div[data-testid="stSidebarNav"] a:hover {
+    background-color: #f3e5ff;
+}
+/* Página activa/seleccionada */
+div[data-testid="stSidebarNav"] a[aria-current="page"] {
+    background-color: #7E00D4;
+    color: white !important;
+}
+div[data-testid="stSidebarNav"] a[aria-current="page"] span {
+    color: white !important;
+}
+
+/* FOOTER */
+.footer-badge-wrap {
+    margin-top: 40px;
+    margin-bottom: 20px;
+    text-align: center;
+}
+.footer-badge {
+    background: white;
+    border: 1px solid #e0d4f0;
+    border-radius: 50px;
+    padding: 10px 28px;
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 4px 15px rgba(128,85,171,0.12);
+    font-family: 'Century Gothic', sans-serif;
+}
+.footer-badge .brand {
+    font-weight: 700;
+    color: #8055AB;
+    font-size: 0.95em;
+}
+.footer-badge .sep {
+    color: #ddd;
+}
+.footer-badge .copy {
+    color: #888;
+    font-size: 0.82em;
+}
+.footer-badge a {
+    color: mediumorchid;
+    font-size: 0.82em;
+    font-weight: 600;
+    text-decoration: none;
+}
+.footer-badge a:hover {
+    text-decoration: underline;
+}
+
+/* ===== TABS ===== */
+.stTabs [data-testid='stTab'] {
+    gap: 8px;
+}
+.stTabs [data-testid='stTab'] {
+    background-color: #e9c7ff !important;
+    border-radius: 8px 8px 0 0 !important;
+    padding: 10px 20px !important;
+    font-weight: 500 !important;
+}
+.stTabs [data-testid='stTab'][aria-selected='true'] {
+    background-color: #7E00D4 !important;
+    color: white !important;
+}
