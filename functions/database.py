@@ -12,7 +12,8 @@ def obtener_engine():
             f"@{st.secrets['DB_SERVER']}:3306"
             f"/{st.secrets['DB_NAME']}?charset=utf8mb4"
         )
-    except Exception:
+    except Exception as e:
+        print(f"Error al construir la conexión: {e}")
         return None
 
 # DATOS CRUD
