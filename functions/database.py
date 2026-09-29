@@ -13,7 +13,7 @@ def obtener_engine():
             f"/{st.secrets['DB_NAME']}?charset=utf8mb4"
         )
     except Exception as e:
-        print(f"Error al construir la conexión: {e}")
+        st.error(f"Error al construir la conexión: {e}")
         return None
 
 # DATOS CRUD
