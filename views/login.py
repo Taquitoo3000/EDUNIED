@@ -40,8 +40,8 @@ def render():
             usuario = st.selectbox(
                 "**Usuario:**",
                 options= [
-                    'UNIED',
-                    'Dirección'
+                    'Unidad de Información Estadística y Documental',
+                    'Dirección de Capacitación'
                 ],
                 index=None,
                 key='sel_miembro'
