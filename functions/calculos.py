@@ -57,6 +57,13 @@ COORDENADAS = {
     'ROMITA':                        (20.8711, -101.5169),
 }
 ORIGEN = "LEÓN"
+FACTOR_CAPACITADOR = 1.0
+FACTOR_AUXILIO = {
+    "TOTAL": 0.25,
+    "PARCIAL": 0.15,
+}
+FACTOR_AUXILIO_DEFAULT = 0.3
+DEFAULT_COMUNIDAD = 2.5
 
 def valores_existentes(df, columna):
     """Lista de valores únicos ya usados en una columna, para poblar selectboxes."""
@@ -138,14 +145,22 @@ def _distancia_desde_origen(lugar) -> float:
         return 0.0
     return _haversine_km(COORDENADAS[ORIGEN], COORDENADAS[clave])
 
+def _factor_auxilio(tipo) -> float:
+    if pd.isna(tipo):
+        return FACTOR_AUXILIO_DEFAULT
+    return FACTOR_AUXILIO.get(str(tipo).strip().upper(), FACTOR_AUXILIO_DEFAULT)
+
 # ==================== ÍNDICE DE CARGA DE TRABAJO ====================
 
 def calcular_indice_carga(df: pd.DataFrame, pesos: dict) -> pd.DataFrame:
     """
-    Calcula, por persona (capacitador o auxiliar), un índice de carga de
+    Calcula, por persona, un índice de carga de
     trabajo 0-100 combinando: # sesiones, horas totales, asistentes totales,
     días distintos trabajados y km recorridos, cada uno normalizado contra
     el máximo observado y ponderado según `pesos`.
+
+    Cuando la persona participó como auxiliar, cada sesión
+    se pondera con un factor < 1 según el tipo de auxilio (TOTAL > PARCIAL).
 
     Los km se calculan desde León; si una persona visita varios lugares el
     mismo día, solo cuenta la distancia al lugar más lejano de ese día.
@@ -153,32 +168,61 @@ def calcular_indice_carga(df: pd.DataFrame, pesos: dict) -> pd.DataFrame:
 
     columnas_salida = ["persona", "rol", "sesiones", "horas_totales",
                        "asistentes_totales", "dias_distintos",
-                       "km_totales", "indice_carga"]
+                       "km_totales", "sesiones_comunidad", "indice_carga"]
     if df.empty:
         return pd.DataFrame(columns=columnas_salida)
  
     df = df.copy()
     df["horas"] = df.apply(lambda r: calcular_horas(r["inicio"], r["fin"]), axis=1)
-    df["km_lugar"] = df["lugar"].apply(_distancia_desde_origen)
+    es_presencial = df["modalidad"].astype(str).str.strip().str.upper() == "PRESENCIAL"
+    df["km_lugar"] = df["lugar"].apply(_distancia_desde_origen).where(es_presencial, 0.0)
+    es_comunidad = df["es_comunidad"].astype(str).str.strip().str.upper() == "SI"
+    df["comunidad"] = (es_presencial & es_comunidad).astype(int)
  
     filas = []
-    for rol, columna in [("capacitador", "capacitador"), ("auxiliar", "auxiliar")]:
-        subset = df[df[columna].notna() & (df[columna].str.upper() != "NO APLICA")]
-        agrupado = subset.groupby(columna).agg(
+    for rol in ["capacitador", "auxiliar"]:
+        subset = df[df[rol].notna() & (df[rol].str.upper() != "NO APLICA")].copy()
+        if subset.empty:
+            continue
+
+        if rol == "capacitador":
+            subset["factor"] = FACTOR_CAPACITADOR
+        else:
+            subset["factor"] = subset["tipo_auxilio"].apply(_factor_auxilio)
+
+        subset["horas_pond"] = subset["horas"] * subset["factor"]
+        subset["asist_pond"] = subset["asistentes"] * subset["factor"]
+        subset["km_pond"] = subset["km_lugar"] * subset["factor"]
+        subset["comunidad_pond"] = subset["comunidad"] * subset["factor"]
+
+        agrupado = subset.groupby(rol).agg(
             sesiones=("id", "count"),
+            sesiones_pond=("factor", "sum"),
             horas_totales=("horas", "sum"),
+            horas_pond=("horas_pond", "sum"),
             asistentes_totales=("asistentes", "sum"),
+            asistentes_pond=("asist_pond", "sum"),
             dias_distintos=("fecha", "nunique"),
+            sesiones_comunidad=("comunidad", "sum"),
+            comunidad_pond=("comunidad_pond", "sum"),
         )
-        km = (
-            subset.groupby([columna, "fecha"])["km_lugar"].max()
-            .groupby(level=0).sum()
-            .rename("km_totales")
+
+        # Por persona y día: el factor más alto y el km más lejano
+        por_dia = subset.groupby([rol, "fecha"]).agg(
+            factor_dia=("factor", "max"),
+            km_dia=("km_lugar", "max"),
+            km_pond_dia=("km_pond", "max"),
         )
+        por_persona = por_dia.groupby(level=0).agg(
+            dias_pond=("factor_dia", "sum"),
+            km_totales=("km_dia", "sum"),
+            km_pond=("km_pond_dia", "sum"),
+        )
+
         agrupado = (
-            agrupado.join(km)
+            agrupado.join(por_persona)
             .reset_index()
-            .rename(columns={columna: "persona"})
+            .rename(columns={rol: "persona"})
         )
         agrupado["rol"] = rol
         filas.append(agrupado)
@@ -187,18 +231,21 @@ def calcular_indice_carga(df: pd.DataFrame, pesos: dict) -> pd.DataFrame:
     if resultado.empty:
         return resultado
  
-    for col in ["sesiones", "horas_totales", "asistentes_totales", "dias_distintos", "km_totales"]:
+    for col in ["sesiones_pond", "horas_pond", "asistentes_pond", "dias_pond", "km_pond", "comunidad_pond"]:
         maximo = resultado[col].max()
         resultado[f"{col}_norm"] = (resultado[col] / maximo * 100) if maximo > 0 else 0
- 
+
+    pesos["comunidad"] = pesos.get("comunidad", DEFAULT_COMUNIDAD)
     resultado["indice_carga"] = (
-        resultado["sesiones_norm"] * pesos["sesiones"]
-        + resultado["horas_totales_norm"] * pesos["horas"]
-        + resultado["asistentes_totales_norm"] * pesos["asistentes"]
-        + resultado["dias_distintos_norm"] * pesos["dias"]
-        + resultado["km_totales_norm"] * pesos["km"]
+        resultado["sesiones_pond_norm"] * pesos["sesiones"]
+        + resultado["horas_pond_norm"] * pesos["horas"]
+        + resultado["asistentes_pond_norm"] * pesos["asistentes"]
+        + resultado["dias_pond_norm"] * pesos["dias"]
+        + resultado["km_pond_norm"] * pesos["km"]
+        + resultado["comunidad_pond_norm"] * pesos["comunidad"]
     ) / sum(pesos.values())
 
     resultado["km_totales"] = resultado["km_totales"].round(1)
+    resultado["sesiones_comunidad"] = resultado["sesiones_comunidad"].astype(int)
     resultado = resultado.sort_values("indice_carga", ascending=False)
     return resultado[columnas_salida]

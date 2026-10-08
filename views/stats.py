@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from functions.calculos import calcular_indice_carga, COORDENADAS
+from functions.calculos import calcular_indice_carga, COORDENADAS, FACTOR_CAPACITADOR, FACTOR_AUXILIO
 
 # ---------------------- PALETA ----------------------
 
@@ -174,8 +174,8 @@ def render(df: pd.DataFrame):
     st.divider()
     st.markdown("### Índice de carga de trabajo por persona")
     st.caption(
-        "Combina # de sesiones, horas totales, asistentes atendidos y días "
-        "distintos trabajados. Ajusta la importancia de cada factor:"
+        "Combina # de sesiones, horas, asistentes, días distintos, km recorridos "
+        "y sesiones en comunidad. Las sesiones como auxiliar pesan menos (total > parcial)."
     )
 
     col_p1, col_p2, col_p3, col_p4, col_p5 = st.columns(5)
@@ -205,7 +205,7 @@ def render(df: pd.DataFrame):
         color="indice_carga", color_continuous_scale=ESCALA_MORADA,
         text=top15["indice_carga"].round(1),
         labels={"indice_carga": "Índice de carga", "persona": ""},
-        hover_data={"rol": True, "sesiones": True, "horas_totales": ":.1f", "asistentes_totales": True},
+        hover_data={"rol": True, "sesiones": True, "horas_totales": ":.1f", "asistentes_totales": True, "km_totales": ":.1f"},
     )
     fig.update_traces(textposition="outside")
     fig.update_layout(template=PLANTILLA_PLOTLY, showlegend=False, coloraxis_showscale=False, height=460)
@@ -217,6 +217,7 @@ def render(df: pd.DataFrame):
             "horas_totales": "{:.1f}",
             "asistentes_totales": "{:.0f}",
             "indice_carga": "{:.1f}",
+            "km_totales": "{:.1f}",
         }),
         width="stretch",
         hide_index=True,
@@ -229,3 +230,79 @@ def render(df: pd.DataFrame):
         mime="text/csv",
         icon=":material/download:",
     )
+
+    with st.expander("📐 ¿Cómo se calcula el índice?"):
+        st.markdown("#### 1. Factor por sesión")
+        st.markdown(
+            "Cada sesión en la que participa una persona recibe un factor $f_i$ "
+            "según su rol:"
+        )
+        st.markdown(
+            f"- Capacitador: $f = {FACTOR_CAPACITADOR}$\n"
+            f"- Auxiliar **total**: $f = {FACTOR_AUXILIO['TOTAL']}$\n"
+            f"- Auxiliar **parcial**: $f = {FACTOR_AUXILIO['PARCIAL']}$"
+        )
+
+        st.markdown("#### 2. Distancia por sesión")
+        st.markdown(
+            "Distancia geodésica desde León al lugar de la sesión (fórmula de "
+            "haversine, $R = 6371$ km). Si la sesión **no es presencial**, $k_i = 0$."
+        )
+        st.latex(
+            r"k_i = 2R \arcsin\sqrt{\sin^2\!\left(\tfrac{\Delta\varphi}{2}\right)"
+            r"+ \cos\varphi_1 \cos\varphi_2 \sin^2\!\left(\tfrac{\Delta\lambda}{2}\right)}"
+        )
+
+        st.markdown("#### 3. Componentes por persona")
+        st.markdown(
+            "Para una persona, sea $I$ el conjunto de sus sesiones y $D$ el conjunto "
+            "de días distintos en que trabajó. Sea $h_i$ las horas de la sesión, "
+            "$a_i$ sus asistentes y $c_i = 1$ si la sesión fue presencial y en "
+            "comunidad (0 en otro caso):"
+        )
+        st.latex(r"""
+        \begin{aligned}
+        S &= \sum_{i \in I} f_i && \text{(sesiones ponderadas)} \\
+        H &= \sum_{i \in I} f_i \, h_i && \text{(horas ponderadas)} \\
+        A &= \sum_{i \in I} f_i \, a_i && \text{(asistentes ponderados)} \\
+        N &= \sum_{d \in D} \max_{i \in d} f_i && \text{(días ponderados)} \\
+        K &= \sum_{d \in D} \max_{i \in d} \left( f_i \, k_i \right) && \text{(km ponderados)} \\
+        C &= \sum_{i \in I} f_i \, c_i && \text{(sesiones en comunidad ponderadas)}
+        \end{aligned}
+        """)
+        st.markdown(
+            "En los **días** y los **km** solo cuenta la sesión más relevante de cada "
+            "día (el máximo), de modo que varias sesiones el mismo día no duplican "
+            "el viaje ni el día trabajado."
+        )
+
+        st.markdown("#### 4. Normalización")
+        st.markdown(
+            "Cada componente $X \\in \\{S, H, A, N, K, C\\}$ se lleva a escala 0-100 "
+            "dividiéndola entre el máximo observado entre **todas** las personas "
+            "(capacitadores y auxiliares juntos):"
+        )
+        st.latex(r"\hat{X}_p = 100 \cdot \frac{X_p}{\max_q X_q}")
+
+        st.markdown("#### 5. Índice final")
+        st.markdown(
+            "Promedio ponderado de las componentes normalizadas, con los pesos $w$ "
+            "que ajustas en los sliders:"
+        )
+        st.latex(
+            r"\text{Índice}_p = \frac{w_s \hat{S}_p + w_h \hat{H}_p + w_a \hat{A}_p "
+            r"+ w_d \hat{N}_p + w_k \hat{K}_p + w_c \hat{C}_p}"
+            r"{w_s + w_h + w_a + w_d + w_k + w_c}"
+        )
+
+        st.markdown("#### Cómo interpretarlo")
+        st.markdown(
+            "- El índice está entre 0 y 100. Un 100 solo se alcanzaría si la persona "
+            "fuera la máxima en **todas** las componentes con peso.\n"
+            "- Es una medida **relativa**: depende de las demás personas del periodo "
+            "filtrado. Si cambias el rango de fechas, los valores cambian.\n"
+            "- Subir el peso de un factor hace que pese más en el promedio; no es "
+            "necesario que los pesos sumen 10 ni 1, porque se dividen entre su suma.\n"
+            "- Si una persona fue capacitador y auxiliar, aparece en dos filas, una "
+            "por rol."
+        )
