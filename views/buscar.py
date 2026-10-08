@@ -54,7 +54,14 @@ def render(df, engine):
         ]
 
     st.write(f"**{len(resultado)}** registro(s) encontrado(s)")
-    st.dataframe(resultado, width='stretch', hide_index=True)
+    mostrar = resultado.copy()
+    for col in ["inicio", "fin"]:
+        mostrar[col] = mostrar[col].apply(
+            lambda v: convertir_a_time(v).strftime("%H:%M") if pd.notna(v) else ""
+        )
+    mostrar["asistentes"] = mostrar["asistentes"].astype("Int64")
+    
+    st.dataframe(mostrar, width="stretch", hide_index=True)
 
     st.divider()
     st.subheader("Editar / eliminar un registro")
@@ -64,6 +71,7 @@ def render(df, engine):
     else:
         id_seleccionado = st.selectbox("Selecciona el ID a editar", resultado["id"].tolist())
         registro = resultado[resultado["id"] == id_seleccionado].iloc[0]
+        asistentes_na_actual = pd.isna(registro["asistentes"])
 
         with st.form("form_edicion"):
             col1, col2, col3 = st.columns(3)
@@ -88,7 +96,16 @@ def render(df, engine):
                     key=f"edit_comunidad_{id_seleccionado}",
                 )
             with col5:
-                e_asistentes = st.number_input("Asistentes", min_value=0, step=1, value=int(registro["asistentes"]), key=f"edit_asistentes_{id_seleccionado}")
+                e_asistentes = st.number_input(
+                    "Asistentes", min_value=0, step=1,
+                    value=0 if asistentes_na_actual else int(registro["asistentes"]),
+                    key=f"edit_asistentes_{id_seleccionado}",
+                )
+                e_asistentes_na = st.checkbox(
+                    "No Aplica",
+                    value=asistentes_na_actual,
+                    key=f"edit_asistentes_na_{id_seleccionado}",
+                )
 
             col_guardar, col_eliminar = st.columns(2)
             with col_guardar:
@@ -109,7 +126,7 @@ def render(df, engine):
                 "fin": e_fin,
                 "lugar": e_lugar,
                 "es_comunidad": e_comunidad,
-                "asistentes": int(e_asistentes),
+                "asistentes": None if e_asistentes_na else int(e_asistentes),
             }
             try:
                 actualizar_registro(engine, int(id_seleccionado), datos)

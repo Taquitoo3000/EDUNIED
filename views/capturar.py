@@ -33,6 +33,9 @@ def render(df, engine):
             es_comunidad = st.radio("¿Es comunidad?", OPCIONES_SI_NO, horizontal=True, key="cap_comunidad")
         with col5:
             asistentes = st.number_input("Asistentes", min_value=0, step=1, key="cap_asistentes")
+            asistentes_b = st.checkbox("No Aplica",key="cap_asistentes_na")
+            if asistentes_b:
+                asistentes=None
 
         guardar = st.form_submit_button("Guardar registro", type="primary")
 
@@ -52,7 +55,7 @@ def render(df, engine):
                 "fin": fin_val,
                 "lugar": lugar,
                 "es_comunidad": es_comunidad,
-                "asistentes": int(asistentes),
+                "asistentes": None if asistentes is None else int(asistentes),
             }
             try:
                 insertar_registro(engine, datos)
