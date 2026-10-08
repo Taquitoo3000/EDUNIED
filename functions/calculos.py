@@ -1,3 +1,4 @@
+import math
 import pandas as pd
 import streamlit as st
 from datetime import datetime, date, time, timedelta
@@ -55,7 +56,7 @@ COORDENADAS = {
     'MANUEL DOBLADO':                (20.7289, -101.9525),
     'ROMITA':                        (20.8711, -101.5169),
 }
-
+ORIGEN = "LEÓN"
 
 def valores_existentes(df, columna):
     """Lista de valores únicos ya usados en una columna, para poblar selectboxes."""
@@ -120,23 +121,45 @@ def calcular_horas(inicio, fin):
         dt_fin += timedelta(days=1)
     return round((dt_fin - dt_inicio).total_seconds() / 3600, 2)
 
+def _haversine_km(coord1: tuple, coord2: tuple) -> float:
+    """Distancia en km en línea recta entre dos puntos (lat, lon)."""
+    lat1, lon1 = map(math.radians, coord1)
+    lat2, lon2 = map(math.radians, coord2)
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return 6371 * 2 * math.asin(math.sqrt(a))
+
+def _distancia_desde_origen(lugar) -> float:
+    """Km desde León al lugar. Devuelve 0 si el lugar no está en COORDENADAS."""
+    if pd.isna(lugar):
+        return 0.0
+    clave = str(lugar).strip().upper()
+    if clave not in COORDENADAS:
+        return 0.0
+    return _haversine_km(COORDENADAS[ORIGEN], COORDENADAS[clave])
+
 # ==================== ÍNDICE DE CARGA DE TRABAJO ====================
 
 def calcular_indice_carga(df: pd.DataFrame, pesos: dict) -> pd.DataFrame:
     """
     Calcula, por persona (capacitador o auxiliar), un índice de carga de
-    trabajo 0-100 combinando: # sesiones, horas totales, asistentes totales
-    y días distintos trabajados, cada uno normalizado contra el máximo
-    observado y ponderado según `pesos`.
+    trabajo 0-100 combinando: # sesiones, horas totales, asistentes totales,
+    días distintos trabajados y km recorridos, cada uno normalizado contra
+    el máximo observado y ponderado según `pesos`.
+
+    Los km se calculan desde León; si una persona visita varios lugares el
+    mismo día, solo cuenta la distancia al lugar más lejano de ese día.
     """
+
+    columnas_salida = ["persona", "rol", "sesiones", "horas_totales",
+                       "asistentes_totales", "dias_distintos",
+                       "km_totales", "indice_carga"]
     if df.empty:
-        return pd.DataFrame(
-            columns=["persona", "rol", "sesiones", "horas_totales",
-                     "asistentes_totales", "dias_distintos", "indice_carga"]
-        )
+        return pd.DataFrame(columns=columnas_salida)
  
     df = df.copy()
     df["horas"] = df.apply(lambda r: calcular_horas(r["inicio"], r["fin"]), axis=1)
+    df["km_lugar"] = df["lugar"].apply(_distancia_desde_origen)
  
     filas = []
     for rol, columna in [("capacitador", "capacitador"), ("auxiliar", "auxiliar")]:
@@ -146,7 +169,17 @@ def calcular_indice_carga(df: pd.DataFrame, pesos: dict) -> pd.DataFrame:
             horas_totales=("horas", "sum"),
             asistentes_totales=("asistentes", "sum"),
             dias_distintos=("fecha", "nunique"),
-        ).reset_index().rename(columns={columna: "persona"})
+        )
+        km = (
+            subset.groupby([columna, "fecha"])["km_lugar"].max()
+            .groupby(level=0).sum()
+            .rename("km_totales")
+        )
+        agrupado = (
+            agrupado.join(km)
+            .reset_index()
+            .rename(columns={columna: "persona"})
+        )
         agrupado["rol"] = rol
         filas.append(agrupado)
  
@@ -154,7 +187,7 @@ def calcular_indice_carga(df: pd.DataFrame, pesos: dict) -> pd.DataFrame:
     if resultado.empty:
         return resultado
  
-    for col in ["sesiones", "horas_totales", "asistentes_totales", "dias_distintos"]:
+    for col in ["sesiones", "horas_totales", "asistentes_totales", "dias_distintos", "km_totales"]:
         maximo = resultado[col].max()
         resultado[f"{col}_norm"] = (resultado[col] / maximo * 100) if maximo > 0 else 0
  
@@ -163,8 +196,9 @@ def calcular_indice_carga(df: pd.DataFrame, pesos: dict) -> pd.DataFrame:
         + resultado["horas_totales_norm"] * pesos["horas"]
         + resultado["asistentes_totales_norm"] * pesos["asistentes"]
         + resultado["dias_distintos_norm"] * pesos["dias"]
+        + resultado["km_totales_norm"] * pesos["km"]
     ) / sum(pesos.values())
- 
+
+    resultado["km_totales"] = resultado["km_totales"].round(1)
     resultado = resultado.sort_values("indice_carga", ascending=False)
-    return resultado[["persona", "rol", "sesiones", "horas_totales",
-                       "asistentes_totales", "dias_distintos", "indice_carga"]]
+    return resultado[columnas_salida]

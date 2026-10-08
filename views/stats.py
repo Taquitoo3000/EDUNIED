@@ -178,17 +178,19 @@ def render(df: pd.DataFrame):
         "distintos trabajados. Ajusta la importancia de cada factor:"
     )
 
-    col_p1, col_p2, col_p3, col_p4 = st.columns(4)
-    peso_sesiones = col_p1.slider("Peso: # sesiones", 0.0, 3.0, 1.0, 0.1)
-    peso_horas = col_p2.slider("Peso: horas totales", 0.0, 3.0, 1.0, 0.1)
-    peso_asistentes = col_p3.slider("Peso: asistentes", 0.0, 3.0, 1.0, 0.1)
-    peso_dias = col_p4.slider("Peso: días distintos", 0.0, 3.0, 1.0, 0.1)
+    col_p1, col_p2, col_p3, col_p4, col_p5 = st.columns(5)
+    peso_sesiones = col_p1.slider("Peso: # sesiones", 0.0, 9.0, 3.0, 0.1)
+    peso_horas = col_p2.slider("Peso: horas totales", 0.0, 10.0, 10.0, 0.1)
+    peso_asistentes = col_p3.slider("Peso: asistentes", 0.0, 10.0, 3.0, 0.1)
+    peso_dias = col_p4.slider("Peso: días distintos", 0.0, 10.0, 10.0, 0.1)
+    peso_km = col_p5.slider("Peso: km recorridos", 0.0, 10.0, 10.0, 0.1)
 
     pesos = {
         "sesiones": peso_sesiones,
         "horas": peso_horas,
         "asistentes": peso_asistentes,
         "dias": peso_dias,
+        "km": peso_km,
     }
 
     indice_df = calcular_indice_carga(df, pesos)
